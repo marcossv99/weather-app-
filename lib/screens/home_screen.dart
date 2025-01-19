@@ -1,37 +1,53 @@
-import 'package:app_de_clima/services/weather_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:app_de_clima/services/weather_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({Key? key}) : super(key: key);
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final WeatherService _weatherService = WeatherService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   String locationMessage = "Obtendo localização...";
   String city = "";
   String country = "";
   String weatherDescription = "";
   double temperature = 0.0;
   String lastUpdateTime = "";
-  final WeatherService _weatherService = WeatherService();
-  final TextEditingController _cityController = TextEditingController();
+
+  List<Map<String, dynamic>> savedCities = [];
 
   @override
   void initState() {
     super.initState();
-    _checkPermissionAndGetLocation();
+    _getWeatherData();
+    _loadSavedCities();
   }
 
-  // Função para buscar clima com base no nome da cidade
-  Future<void> _getWeatherByCity(String cityName) async {
+  // Função para obter dados de clima
+  Future<void> _getWeatherData() async {
     try {
-      var weatherData = await _weatherService.getWeatherByCity(cityName);
+      // Obter localização do dispositivo
+      Position position = await _weatherService.getCurrentLocation();
+
+      // Obter dados de clima com base na localização
+      var weatherData = await _weatherService.getWeatherByLocation(
+        position.latitude,
+        position.longitude,
+      );
 
       setState(() {
+        locationMessage =
+        "Latitude: ${position.latitude}, Longitude: ${position.longitude}";
         city = weatherData['name'];
         country = weatherData['sys']['country'];
         weatherDescription = weatherData['weather'][0]['description'];
@@ -43,102 +59,104 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       setState(() {
-        locationMessage = "Erro ao obter dados da cidade.";
+        locationMessage = "Erro ao obter dados do clima.";
       });
     }
   }
 
-  // Função para verificar permissão e obter localização
-  Future<void> _checkPermissionAndGetLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+  // Função para carregar cidades salvas do Firestore
+  Future<void> _loadSavedCities() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
 
-    // Verificar se o serviço de localização está habilitado
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      setState(() {
-        locationMessage = "Serviço de localização desativado.";
-      });
-      return;
-    }
+    try {
+      final snapshot = await _firestore
+          .collection('cidades salvas')
+          .doc(user.uid)
+          .get();
 
-    // Verificar permissões de localização
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        setState(() {
-          locationMessage = "Permissão de localização negada.";
-        });
-        return;
+      if (snapshot.exists) {
+        final data = snapshot.data();
+        if (data != null && data['cidades'] != null) {
+          setState(() {
+            savedCities = List<Map<String, dynamic>>.from(data['cidades']);
+          });
+        }
       }
+    } catch (e) {
+      print('Erro ao carregar cidades: $e');
     }
+  }
 
-    if (permission == LocationPermission.deniedForever) {
-      setState(() {
-        locationMessage = "Permissão de localização negada permanentemente.";
-      });
+  // Função para salvar uma cidade
+  Future<void> _saveCity() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    if (savedCities.length >= 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Você só pode salvar no máximo 2 cidades.')),
+      );
       return;
     }
 
-    // Obter a localização
-    Position position = await _weatherService.getCurrentLocation();
+    try {
+      final newCity = {
+        'name': city,
+        'weather': weatherDescription,
+      };
 
-    // Obter o clima e as informações da cidade
-    var weatherData = await _weatherService.getWeatherByLocation(position.latitude, position.longitude);
+      savedCities.add(newCity);
 
-    // Atualizar o estado com as novas informações
-    setState(() {
-      locationMessage = "Latitude: ${position.latitude}, Longitude: ${position.longitude}";
-      city = weatherData['name'];
-      country = weatherData['sys']['country'];
-      weatherDescription = weatherData['weather'][0]['description'];
-      temperature = weatherData['main']['temp'];
+      await _firestore
+          .collection('cidades salvas')
+          .doc(user.uid)
+          .set({'cidades': savedCities});
 
-      // Formatar hora da última atualização
-      DateTime now = DateTime.now();
-      lastUpdateTime = DateFormat('HH:mm:ss').format(now);
-    });
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cidade $city salva com sucesso!')),
+      );
+    } catch (e) {
+      print('Erro ao salvar cidade: $e');
+    }
   }
 
-  // Função para atualizar o clima
-  Future<void> _refreshWeather() async {
-    if (_cityController.text.isNotEmpty) {
-      await _getWeatherByCity(_cityController.text);
-    } else {
-      await _checkPermissionAndGetLocation();
-    }
+  // Função para deslogar o usuário
+  Future<void> _logout() async {
+    await _auth.signOut();
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = _auth.currentUser;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Weather App'),
+        title: const Text('Home'),
+        actions: [
+          IconButton(
+            onPressed: _logout,
+            icon: const Icon(Icons.logout),
+          ),
+        ],
       ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Barra de pesquisa
-              TextField(
-                controller: _cityController,
-                decoration: const InputDecoration(
-                  labelText: 'Pesquisar cidade',
-                  border: OutlineInputBorder(),
-                  suffixIcon: Icon(Icons.search),
-                ),
-                onSubmitted: (cityName) {
-                  if (cityName.isNotEmpty) {
-                    _getWeatherByCity(cityName);
-                  }
-                },
+              // Exibe o email do usuário logado
+              Text(
+                'Bem-vindo, ${user?.email ?? 'Usuário'}!',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 20),
-              // Exibir informações
+
+              // Exibe as informações de clima
               Text(
                 'Localização: $city, $country',
                 style: const TextStyle(fontSize: 20),
@@ -154,16 +172,68 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: const TextStyle(fontSize: 18),
               ),
               const SizedBox(height: 20),
+
               // Hora da última atualização
               Text(
                 'Última atualização: $lastUpdateTime',
                 style: const TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
               ),
               const SizedBox(height: 20),
-              // Botão de atualizar clima
-              ElevatedButton(
-                onPressed: _refreshWeather,
-                child: const Text('Atualizar Clima'),
+
+              // Botões para atualizar e salvar cidade
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton(
+                    onPressed: _getWeatherData,
+                    child: const Text('Atualizar Clima'),
+                  ),
+                  ElevatedButton(
+                    onPressed: _saveCity,
+                    child: const Text('Salvar Cidade'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Exibe as cidades salvas
+              const Text(
+                'Cidades Salvas:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: savedCities.length,
+                  itemBuilder: (context, index) {
+                    final savedCity = savedCities[index];
+                    return Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Cidade: ${savedCity['name']}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Clima: ${savedCity['weather']}',
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
