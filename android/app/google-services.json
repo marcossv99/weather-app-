@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "936262113353",
+    "project_id": "appdeclima-98f93",
+    "storage_bucket": "appdeclima-98f93.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:936262113353:android:1eddfd3d27b828ad9f8798",
+        "android_client_info": {
+          "package_name": "com.example.weather_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCe2V3o2H0_qzYPC7vfpO3C_5QpqiMHa-s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
