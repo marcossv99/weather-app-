@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:app_de_clima/services/weather_service.dart';
+import 'package:app_de_clima/services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
@@ -15,6 +16,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final WeatherService _weatherService = WeatherService();
+  final NotificationService _notificationService = NotificationService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   int _currentIndex = 0;
@@ -23,13 +25,15 @@ class _HomeScreenState extends State<HomeScreen> {
   String city = "";
   String country = "";
   String weatherDescription = "";
-  double temperature = 0.0;
+  String forecast = "";
+  double temperature = 0;
   String lastUpdateTime = "";
 
   @override
   void initState() {
     super.initState();
     _getWeatherData();
+    _notificationService.init();
   }
 
   Future<void> _getWeatherData() async {
@@ -41,12 +45,15 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
       setState(() {
-        city = weatherData['name'];
-        country = weatherData['sys']['country'];
-        weatherDescription = weatherData['weather'][0]['description'];
-        temperature = weatherData['main']['temp'];
+        city = weatherData['name'] ?? 'N/A';
+        country = weatherData['sys']['country'] ?? 'N/A';
+        weatherDescription = weatherData['weather'][0]['description'] ?? 'N/A';
+        forecast = weatherData['weather'][0]['main'] ?? 'N/A';
+        temperature = (weatherData['main']['temp'] as num?)?.toDouble() ?? 0.0;
         lastUpdateTime = DateFormat('HH:mm').format(DateTime.now());
       });
+
+      _notificationService.showNotification(city, temperature, forecast);
     } catch (e) {
       print('Erro ao obter dados do clima: $e');
     }
@@ -57,10 +64,33 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.pushReplacementNamed(context, '/login');
   }
 
+  Future<void> _scheduleWeatherNotifications() async {
+    const duration = Duration(minutes: 5);
+    await _notificationService.scheduleNotification(
+      city,
+      temperature,
+      forecast,
+      duration,
+    );
+  }
+
   void _toggleDarkMode() {
     setState(() {
       isDarkMode = !isDarkMode;
     });
+  }
+
+  Widget _buildTestNotificationButton() {
+    return ElevatedButton(
+      onPressed: () {
+        _notificationService.showNotification(
+          city,
+          temperature,
+          forecast,
+        );
+      },
+      child: const Text('Testar Notificação'),
+    );
   }
 
   @override
@@ -69,28 +99,51 @@ class _HomeScreenState extends State<HomeScreen> {
       Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: Stack(
             children: [
-              Text(
-                'Localização: $city, $country',
-                style: const TextStyle(fontSize: 20),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Localização: $city, $country',
+                    style: const TextStyle(fontSize: 20),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Temperatura: ${temperature.toStringAsFixed(1)}°C',
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Clima: $weatherDescription',
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Previsão: $forecast',
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Última atualização: $lastUpdateTime',
+                    style: const TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                'Temperatura: $temperature°C',
-                style: const TextStyle(fontSize: 18),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Clima: $weatherDescription',
-                style: const TextStyle(fontSize: 18),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Última atualização: $lastUpdateTime',
-                style: const TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
+              Positioned(
+                top: 0,
+                right: 0,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.refresh,
+                    color: Theme.of(context).primaryColor,
+                    size: 30,
+                  ),
+                  onPressed: () async {
+                    await _getWeatherData();
+                  },
+                ),
               ),
             ],
           ),
@@ -143,6 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
           title: const Text('App de Clima'),
         ),
         body: screens[_currentIndex],
+        floatingActionButton: _buildTestNotificationButton(),
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (index) {
@@ -197,13 +251,33 @@ class _SavedCitiesScreenState extends State<SavedCitiesScreen> {
       await _firestore.collection('saved_cities').get();
       List<Map<String, dynamic>> cities = [];
       for (var doc in snapshot.docs) {
-        cities.add(doc.data() as Map<String, dynamic>);
+        cities.add({
+          ...doc.data() as Map<String, dynamic>,
+          'id': doc.id,
+        });
       }
       setState(() {
         _savedCities = cities;
       });
     } catch (e) {
       print('Erro ao carregar cidades salvas: $e');
+    }
+  }
+
+  Future<void> _deleteCity(String documentId) async {
+    if (documentId.isEmpty) return;
+
+    try {
+      await _firestore.collection('saved_cities').doc(documentId).delete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cidade removida com sucesso!')),
+      );
+      await _loadSavedCities();
+    } catch (e) {
+      print('Erro ao excluir cidade: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao excluir: ${e.toString()}')),
+      );
     }
   }
 
@@ -218,8 +292,12 @@ class _SavedCitiesScreenState extends State<SavedCitiesScreen> {
           return Card(
             margin: const EdgeInsets.all(10),
             child: ListTile(
-              title: Text('${city['city']}, ${city['country']}'),
-              subtitle: Text('${city['temperature']}°C - ${city['description']}'),
+              title: Text('${city['city'] ?? 'Cidade desconhecida'}, ${city['country'] ?? 'País desconhecido'}'),
+              subtitle: Text('${(city['temperature'] as num?)?.toStringAsFixed(1) ?? '0.0'}°C - ${city['description'] ?? 'Descrição indisponível'}'),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red),
+                onPressed: () => _deleteCity(city['id']?.toString() ?? ''),
+              ),
             ),
           );
         },
@@ -238,6 +316,7 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _controller = TextEditingController();
   String city = '';
+  String country = '';
   String weatherDescription = '';
   double temperature = 0.0;
 
@@ -249,9 +328,10 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       var weatherData = await _weatherService.getWeatherByCity(cityName);
       setState(() {
-        city = weatherData['name'];
-        weatherDescription = weatherData['weather'][0]['description'];
-        temperature = weatherData['main']['temp'];
+        city = weatherData['name'] ?? 'N/A';
+        country = weatherData['sys']['country'] ?? 'N/A';
+        weatherDescription = weatherData['weather'][0]['description'] ?? 'N/A';
+        temperature = (weatherData['main']['temp'] as num?)?.toDouble() ?? 0.0;
       });
     } catch (e) {
       print('Erro ao buscar clima: $e');
@@ -264,7 +344,7 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       await FirebaseFirestore.instance.collection('saved_cities').add({
         'city': city,
-        'country': 'Country Name', // Aqui você pode adicionar o código para pegar o país
+        'country': country,
         'temperature': temperature,
         'description': weatherDescription,
       });
@@ -274,6 +354,9 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     } catch (e) {
       print('Erro ao salvar cidade: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erro ao salvar a cidade')),
+      );
     }
   }
 
@@ -306,7 +389,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   Text(
-                    'Temperatura: $temperature°C',
+                    'Temperatura: ${temperature.toStringAsFixed(1)}°C',
                     style: const TextStyle(fontSize: 18),
                   ),
                   Text(
@@ -315,7 +398,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   const SizedBox(height: 20),
                   IconButton(
-                    icon: const Icon(Icons.save),
+                    icon: Icon(Icons.save,
+                      size: 40,
+                      color: Theme.of(context).primaryColor,
+                    ),
                     onPressed: _saveCity,
                   ),
                 ],
