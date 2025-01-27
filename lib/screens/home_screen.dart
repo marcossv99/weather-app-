@@ -1,10 +1,12 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:app_de_clima/services/weather_service.dart';
 import 'package:app_de_clima/services/notification_service.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
+import 'search_screen.dart'; // Importando a tela de pesquisa
+import 'saved_cities_screen.dart'; // Importando a tela de cidades salvas
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -17,17 +19,20 @@ class _HomeScreenState extends State<HomeScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final WeatherService _weatherService = WeatherService();
   final NotificationService _notificationService = NotificationService();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   int _currentIndex = 0;
   bool isDarkMode = false;
+  bool _isDayTime = true;
 
   String city = "";
   String country = "";
   String weatherDescription = "";
   String forecast = "";
-  double temperature = 0;
+  int temperature = 0;
   String lastUpdateTime = "";
+
+  // Função para atualizar as cidades salvas
+  VoidCallback? _onRefreshSavedCities;
 
   @override
   void initState() {
@@ -44,12 +49,18 @@ class _HomeScreenState extends State<HomeScreen> {
         position.longitude,
       );
 
+      final now = DateTime.now();
+      final hour = now.hour;
+      setState(() {
+        _isDayTime = hour >= 5 && hour < 18;
+      });
+
       setState(() {
         city = weatherData['name'] ?? 'N/A';
         country = weatherData['sys']['country'] ?? 'N/A';
         weatherDescription = weatherData['weather'][0]['description'] ?? 'N/A';
         forecast = weatherData['weather'][0]['main'] ?? 'N/A';
-        temperature = (weatherData['main']['temp'] as num?)?.toDouble() ?? 0.0;
+        temperature = (weatherData['main']['temp'] as num).round();
         lastUpdateTime = DateFormat('HH:mm').format(DateTime.now());
       });
 
@@ -64,16 +75,6 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.pushReplacementNamed(context, '/login');
   }
 
-  Future<void> _scheduleWeatherNotifications() async {
-    const duration = Duration(minutes: 5);
-    await _notificationService.scheduleNotification(
-      city,
-      temperature,
-      forecast,
-      duration,
-    );
-  }
-
   void _toggleDarkMode() {
     setState(() {
       isDarkMode = !isDarkMode;
@@ -81,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildTestNotificationButton() {
-    return ElevatedButton(
+    return FloatingActionButton(
       onPressed: () {
         _notificationService.showNotification(
           city,
@@ -89,326 +90,263 @@ class _HomeScreenState extends State<HomeScreen> {
           forecast,
         );
       },
-      child: const Text('Testar Notificação'),
+      child: const Icon(Icons.notifications),
+      backgroundColor: Theme.of(context).colorScheme.primary,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final screens = [
-      Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Stack(
-            children: [
-              Column(
+      _buildHomeScreen(),
+      SavedCitiesScreen(
+        onRefresh: _onRefreshSavedCities, // Passando o callback
+      ),
+      const SearchScreen(),
+      _buildSettingsScreen(),
+    ];
+
+    return MaterialApp(
+      theme: _buildAppTheme(),
+      home: Scaffold(
+        appBar: AppBar(
+          leading: Icon(
+            _isDayTime ? Icons.wb_sunny : Icons.nightlight_round,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+          title: Text(
+            'App de Clima',
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: Icon(
+                Icons.refresh,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              onPressed: () async {
+                await _getWeatherData(); // Atualiza os dados da tela inicial
+                if (_onRefreshSavedCities != null) {
+                  _onRefreshSavedCities!(); // Notifica o SavedCitiesScreen
+                }
+              },
+            ),
+          ],
+        ),
+        body: screens[_currentIndex],
+        floatingActionButton: _buildTestNotificationButton(),
+        bottomNavigationBar: _buildFloatingNavBar(),
+      ),
+    );
+  }
+
+  Widget _buildHomeScreen() {
+    return Container(
+      height: MediaQuery.of(context).size.height,
+      child: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Localização: $city, $country',
-                    style: const TextStyle(fontSize: 20),
+                  Icon(
+                    _getWeatherIcon(forecast),
+                    size: 120,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 30),
                   Text(
-                    'Temperatura: ${temperature.toStringAsFixed(1)}°C',
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Clima: $weatherDescription',
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Previsão: $forecast',
-                    style: const TextStyle(fontSize: 18),
+                    '$city, $country',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Poppins',
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Última atualização: $lastUpdateTime',
-                    style: const TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
+                    '$temperature°C',
+                    style: TextStyle(
+                      fontSize: 72,
+                      fontWeight: FontWeight.w300,
+                      fontFamily: 'Poppins',
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  Text(
+                    weatherDescription.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 20,
+                      letterSpacing: 1.5,
+                      fontFamily: 'Montserrat',
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
                 ],
               ),
-              Positioned(
-                top: 0,
-                right: 0,
-                child: IconButton(
-                  icon: Icon(
-                    Icons.refresh,
-                    color: Theme.of(context).primaryColor,
-                    size: 30,
-                  ),
-                  onPressed: () async {
-                    await _getWeatherData();
-                  },
-                ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Text(
+              'Última atualização: $lastUpdateTime',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontStyle: FontStyle.italic,
+                fontFamily: 'Montserrat',
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsScreen() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: Icon(Icons.dark_mode,
+                color: Theme.of(context).colorScheme.onSurface),
+            title: Text(
+              'Modo Escuro',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            trailing: Switch(
+              value: isDarkMode,
+              onChanged: (value) => _toggleDarkMode(),
+            ),
+          ),
+          ListTile(
+            leading: Icon(Icons.logout,
+                color: Theme.of(context).colorScheme.onSurface),
+            title: Text(
+              'Sair',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            onTap: () => _logout(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ThemeData _buildAppTheme() {
+    return isDarkMode
+        ? ThemeData.dark().copyWith(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: Colors.blueGrey,
+        brightness: Brightness.dark,
+        surface: const Color(0xFF121212),
+        onSurface: Colors.white,
+        primary: Colors.blueGrey[300],
+      ),
+      textTheme: TextTheme(
+        headlineLarge: TextStyle(fontFamily: 'Poppins'),
+        bodyLarge: TextStyle(fontFamily: 'Montserrat'),
+      ),
+    )
+        : ThemeData.light().copyWith(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: Colors.blue,
+        brightness: Brightness.light,
+        surface: Colors.white,
+        onSurface: Colors.black87,
+        primary: Colors.blue[700],
+      ),
+      textTheme: TextTheme(
+        headlineLarge: TextStyle(fontFamily: 'Poppins'),
+        bodyLarge: TextStyle(fontFamily: 'Montserrat'),
+      ),
+    );
+  }
+
+  Widget _buildFloatingNavBar() {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface.withAlpha(
+              (Theme.of(context).colorScheme.surface.a * 0.8).round(),
+            ),
+          ),
+          child: BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (index) => setState(() => _currentIndex = index),
+            elevation: 0,
+            type: BottomNavigationBarType.fixed,
+            showSelectedLabels: false,
+            showUnselectedLabels: false,
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home_outlined),
+                activeIcon: Icon(Icons.home),
+                label: 'Início',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.favorite_border),
+                activeIcon: Icon(Icons.favorite),
+                label: 'Salvo',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.search_outlined),
+                activeIcon: Icon(Icons.search),
+                label: 'Pesquisa',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.settings_outlined),
+                activeIcon: Icon(Icons.settings),
+                label: 'Configurações',
               ),
             ],
           ),
         ),
       ),
-      const SavedCitiesScreen(),
-      const SearchScreen(),
-      Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.dark_mode),
-              title: const Text('Modo Escuro'),
-              trailing: Switch(
-                value: isDarkMode,
-                onChanged: (value) => _toggleDarkMode(),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Logout'),
-              onTap: () => _logout(),
-            ),
-          ],
-        ),
-      ),
-    ];
-
-    return MaterialApp(
-      theme: isDarkMode
-          ? ThemeData.dark().copyWith(
-        primaryColor: Colors.teal,
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          selectedItemColor: Colors.teal,
-          unselectedItemColor: Colors.grey,
-          backgroundColor: Colors.black,
-        ),
-      )
-          : ThemeData.light().copyWith(
-        primaryColor: Colors.blue,
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          selectedItemColor: Colors.blue,
-          unselectedItemColor: Colors.grey,
-          backgroundColor: Colors.white,
-        ),
-      ),
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('App de Clima'),
-        ),
-        body: screens[_currentIndex],
-        floatingActionButton: _buildTestNotificationButton(),
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home),
-              label: 'Início',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.favorite),
-              label: 'Salvo',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.search),
-              label: 'Pesquisa',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.settings),
-              label: 'Configurações',
-            ),
-          ],
-        ),
-      ),
     );
   }
-}
 
-class SavedCitiesScreen extends StatefulWidget {
-  const SavedCitiesScreen({Key? key}) : super(key: key);
-
-  @override
-  State<SavedCitiesScreen> createState() => _SavedCitiesScreenState();
-}
-
-class _SavedCitiesScreenState extends State<SavedCitiesScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  List<Map<String, dynamic>> _savedCities = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSavedCities();
-  }
-
-  Future<void> _loadSavedCities() async {
-    try {
-      QuerySnapshot snapshot =
-      await _firestore.collection('saved_cities').get();
-      List<Map<String, dynamic>> cities = [];
-      for (var doc in snapshot.docs) {
-        cities.add({
-          ...doc.data() as Map<String, dynamic>,
-          'id': doc.id,
-        });
-      }
-      setState(() {
-        _savedCities = cities;
-      });
-    } catch (e) {
-      print('Erro ao carregar cidades salvas: $e');
+  IconData _getWeatherIcon(String forecast) {
+    switch (forecast.toUpperCase()) {
+      case 'CLEAR':
+        return Icons.wb_sunny;
+      case 'CLOUDS':
+        return Icons.cloud;
+      case 'RAIN':
+        return Icons.beach_access;
+      case 'SNOW':
+        return Icons.ac_unit;
+      case 'THUNDERSTORM':
+        return Icons.flash_on;
+      case 'DRIZZLE':
+        return Icons.grain;
+      case 'DUST':
+        return Icons.blur_on;
+      case 'TORNADO':
+        return Icons.storm;
+      default:
+        return Icons.wb_cloudy;
     }
-  }
-
-  Future<void> _deleteCity(String documentId) async {
-    if (documentId.isEmpty) return;
-
-    try {
-      await _firestore.collection('saved_cities').doc(documentId).delete();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cidade removida com sucesso!')),
-      );
-      await _loadSavedCities();
-    } catch (e) {
-      print('Erro ao excluir cidade: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao excluir: ${e.toString()}')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Cidades Salvas')),
-      body: ListView.builder(
-        itemCount: _savedCities.length,
-        itemBuilder: (context, index) {
-          final city = _savedCities[index];
-          return Card(
-            margin: const EdgeInsets.all(10),
-            child: ListTile(
-              title: Text('${city['city'] ?? 'Cidade desconhecida'}, ${city['country'] ?? 'País desconhecido'}'),
-              subtitle: Text('${(city['temperature'] as num?)?.toStringAsFixed(1) ?? '0.0'}°C - ${city['description'] ?? 'Descrição indisponível'}'),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: () => _deleteCity(city['id']?.toString() ?? ''),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class SearchScreen extends StatefulWidget {
-  const SearchScreen({Key? key}) : super(key: key);
-
-  @override
-  State<SearchScreen> createState() => _SearchScreenState();
-}
-
-class _SearchScreenState extends State<SearchScreen> {
-  final TextEditingController _controller = TextEditingController();
-  String city = '';
-  String country = '';
-  String weatherDescription = '';
-  double temperature = 0.0;
-
-  final WeatherService _weatherService = WeatherService();
-
-  Future<void> _getWeatherByCity(String cityName) async {
-    if (cityName.isEmpty) return;
-
-    try {
-      var weatherData = await _weatherService.getWeatherByCity(cityName);
-      setState(() {
-        city = weatherData['name'] ?? 'N/A';
-        country = weatherData['sys']['country'] ?? 'N/A';
-        weatherDescription = weatherData['weather'][0]['description'] ?? 'N/A';
-        temperature = (weatherData['main']['temp'] as num?)?.toDouble() ?? 0.0;
-      });
-    } catch (e) {
-      print('Erro ao buscar clima: $e');
-    }
-  }
-
-  Future<void> _saveCity() async {
-    if (city.isEmpty) return;
-
-    try {
-      await FirebaseFirestore.instance.collection('saved_cities').add({
-        'city': city,
-        'country': country,
-        'temperature': temperature,
-        'description': weatherDescription,
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cidade salva com sucesso!')),
-      );
-    } catch (e) {
-      print('Erro ao salvar cidade: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erro ao salvar a cidade')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Pesquisar Clima')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _controller,
-              decoration: const InputDecoration(
-                labelText: 'Pesquisar cidade',
-                border: OutlineInputBorder(),
-                suffixIcon: Icon(Icons.search),
-              ),
-              onChanged: (value) {
-                _getWeatherByCity(value);
-              },
-            ),
-            const SizedBox(height: 20),
-            if (city.isNotEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Cidade: $city',
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    'Temperatura: ${temperature.toStringAsFixed(1)}°C',
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                  Text(
-                    'Clima: $weatherDescription',
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                  const SizedBox(height: 20),
-                  IconButton(
-                    icon: Icon(Icons.save,
-                      size: 40,
-                      color: Theme.of(context).primaryColor,
-                    ),
-                    onPressed: _saveCity,
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
   }
 }

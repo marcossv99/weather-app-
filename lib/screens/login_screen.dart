@@ -29,7 +29,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // Navegar para a próxima tela após o login
       Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
-      String message = 'Erro desconhecido.';
+      String message = 'Email ou senha incorretos.';
 
       if (e.code == 'user-not-found') {
         message = 'Usuário não encontrado.';
@@ -50,36 +50,74 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login')),
+      appBar: AppBar(
+        title: const Text(
+          'Login',
+          style: TextStyle(fontFamily: 'Poppins'),
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const Icon(
+              Icons.person,
+              size: 100,
+              color: Colors.blue,
+            ),
+            const SizedBox(height: 32),
             TextField(
               controller: _emailController,
-              decoration: const InputDecoration(labelText: 'E-mail'),
+              decoration: InputDecoration(
+                labelText: 'E-mail',
+                labelStyle: const TextStyle(fontFamily: 'Montserrat'),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30.0),
+                ),
+              ),
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _passwordController,
-              decoration: const InputDecoration(labelText: 'Senha'),
+              decoration: InputDecoration(
+                labelText: 'Senha',
+                labelStyle: const TextStyle(fontFamily: 'Montserrat'),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30.0),
+                ),
+              ),
               obscureText: true,
             ),
             const SizedBox(height: 32),
             _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : ElevatedButton(
-              onPressed: _login,
-              child: const Text('Entrar'),
+                : SizedBox(
+              height: 50, // Aumenta a altura do botão
+              width: 150, // Diminui a largura do botão
+              child: ElevatedButton(
+                onPressed: _login,
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30.0),
+                  ),
+                ),
+                child: const Text(
+                  'Entrar',
+                  style: TextStyle(fontFamily: 'Poppins', fontSize: 18),
+                ),
+              ),
             ),
             TextButton(
               onPressed: () {
                 Navigator.pushNamed(context, '/register');
               },
-              child: const Text('Criar uma conta'),
+              child: const Text(
+                'Criar uma conta',
+                style: TextStyle(fontFamily: 'Montserrat'),
+              ),
             ),
           ],
         ),

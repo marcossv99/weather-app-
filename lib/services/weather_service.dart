@@ -39,7 +39,7 @@ class WeatherService {
   // Método para buscar clima com base no nome da cidade
   Future<Map<String, dynamic>> getWeatherByCity(String cityName) async {
     final url =
-        'https://api.openweathermap.org/data/2.5/weather?q=$cityName&appid=$apiKey&units=metric';
+        'https://api.openweathermap.org/data/2.5/weather?q=$cityName&appid=$apiKey&units=metric&lang=pt_br';
 
     try {
       final response = await http.get(Uri.parse(url));

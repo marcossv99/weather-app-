@@ -17,9 +17,9 @@ class NotificationService {
     await _flutterLocalNotificationsPlugin.initialize(initializationSettings);
   }
 
-  Future<void> showNotification(String city, double temperature, String forecast) async {
+  Future<void> showNotification(String city, int temperature, String forecast) async {
     String title = "Clima atual em $city";
-    String body = "Temperatura: $temperature°C, Previsão: $forecast";
+    String body = "$temperature°C, Previsão: $forecast";
 
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
     AndroidNotificationDetails(
@@ -42,7 +42,7 @@ class NotificationService {
   }
 
   Future<void> scheduleNotification(
-      String city, double temperature, String forecast, Duration interval) async {
+      String city, int temperature, String forecast, Duration interval) async {
     String title = "Clima atual em $city";
     String body = "Temperatura: $temperature°C, Previsão: $forecast";
 

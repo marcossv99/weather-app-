@@ -53,30 +53,65 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Registrar')),
+      appBar: AppBar(
+        title: const Text(
+          'Registrar',
+          style: TextStyle(fontFamily: 'Poppins'),
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const Icon(
+              Icons.person_add,
+              size: 100,
+              color: Colors.blue,
+            ),
+            const SizedBox(height: 32),
             TextField(
               controller: _emailController,
-              decoration: const InputDecoration(labelText: 'E-mail'),
+              decoration: InputDecoration(
+                labelText: 'E-mail',
+                labelStyle: const TextStyle(fontFamily: 'Montserrat'),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30.0),
+                ),
+              ),
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _passwordController,
-              decoration: const InputDecoration(labelText: 'Senha'),
+              decoration: InputDecoration(
+                labelText: 'Senha',
+                labelStyle: const TextStyle(fontFamily: 'Montserrat'),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30.0),
+                ),
+              ),
               obscureText: true,
             ),
             const SizedBox(height: 32),
             _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : ElevatedButton(
-              onPressed: _register,
-              child: const Text('Registrar'),
+                : SizedBox(
+              height: 50, // Aumenta a altura do botão
+              width: 150, // Diminui a largura do botão
+              child: ElevatedButton(
+                onPressed: _register,
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30.0),
+                  ),
+                ),
+                child: const Text(
+                  'Registrar',
+                  style: TextStyle(fontFamily: 'Poppins', fontSize: 18),
+                ),
+              ),
             ),
           ],
         ),
