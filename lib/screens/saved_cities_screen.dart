@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/weather_service.dart';
 
 class SavedCitiesScreen extends StatefulWidget {
-  final VoidCallback? onRefresh; // Callback para atualização externa
+  final VoidCallback? onRefresh;
 
   const SavedCitiesScreen({Key? key, this.onRefresh}) : super(key: key);
 
@@ -76,7 +76,7 @@ class _SavedCitiesScreenState extends State<SavedCitiesScreen> {
           });
         }
       }
-      await _loadSavedCities(); // Recarrega os dados após a atualização
+      await _loadSavedCities();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cidades atualizadas com sucesso!')),
       );
@@ -90,7 +90,6 @@ class _SavedCitiesScreenState extends State<SavedCitiesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Se o callback de atualização for fornecido, chama _updateSavedCities
     if (widget.onRefresh != null) {
       widget.onRefresh!();
     }

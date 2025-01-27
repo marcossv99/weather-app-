@@ -5,8 +5,8 @@ import 'package:app_de_clima/services/weather_service.dart';
 import 'package:app_de_clima/services/notification_service.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
-import 'search_screen.dart'; // Importando a tela de pesquisa
-import 'saved_cities_screen.dart'; // Importando a tela de cidades salvas
+import 'search_screen.dart';
+import 'saved_cities_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -31,7 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int temperature = 0;
   String lastUpdateTime = "";
 
-  // Função para atualizar as cidades salvas
   VoidCallback? _onRefreshSavedCities;
 
   @override
@@ -100,13 +99,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final screens = [
       _buildHomeScreen(),
       SavedCitiesScreen(
-        onRefresh: _onRefreshSavedCities, // Passando o callback
+        onRefresh: _onRefreshSavedCities,
       ),
       const SearchScreen(),
       _buildSettingsScreen(),
     ];
 
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       theme: _buildAppTheme(),
       home: Scaffold(
         appBar: AppBar(
@@ -131,9 +131,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: Theme.of(context).colorScheme.onSurface,
               ),
               onPressed: () async {
-                await _getWeatherData(); // Atualiza os dados da tela inicial
+                await _getWeatherData();
                 if (_onRefreshSavedCities != null) {
-                  _onRefreshSavedCities!(); // Notifica o SavedCitiesScreen
+                  _onRefreshSavedCities!();
                 }
               },
             ),
